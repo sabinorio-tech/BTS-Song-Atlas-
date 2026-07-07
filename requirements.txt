@@ -1,6 +1,1 @@
 -r requirements/base.txt
--r requirements/de.txt
--r requirements/ds.txt
--r requirements/dashboard.txt
--r requirements/dev.txt
--r requirements/ai.txt
