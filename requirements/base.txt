@@ -5,3 +5,5 @@ ipykernel
 lyricsgenius 
 tqdm
 ipywidgets
+sentence-transformers
+pyarrow
