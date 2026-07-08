@@ -75,7 +75,7 @@ flowchart TD
     D --> E[05 Song master]
     E --> F[06 Multilingual embeddings]
     F --> G[07 Atlas research]
-    F --> H[scripts/rebuild_atlas_projection.py]
+    F --> H[scripts/phase1/rebuild_atlas_projection.py]
     H --> I[Canonical centroids + UMAP + HDBSCAN]
     I --> J[Streamlit-ready atlas]
 ```
@@ -183,7 +183,7 @@ pip install -r requirements/base.txt
 The existing processed embeddings are sufficient; no API credentials are needed:
 
 ```bash
-python scripts/rebuild_atlas_projection.py
+python scripts/phase1/rebuild_atlas_projection.py
 ```
 
 API credentials are required only when rerunning the ingestion notebooks. Store them in an untracked `.env` file:

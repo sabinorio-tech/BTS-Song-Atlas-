@@ -39,7 +39,7 @@ The repository is in strong shape for a final portfolio-oriented push. Runtime d
   - no atlas IDs missing from embeddings
   - no extra embedding IDs outside the atlas
 - Rebuild reproducibility passed:
-  - `scripts/rebuild_atlas_projection.py` reconstructs a valid 381-row projection
+  - `scripts/phase1/rebuild_atlas_projection.py` reconstructs a valid 381-row projection
   - rebuilt metadata matches the checked-in atlas
   - coordinate deltas are only floating-point noise
 - Notebooks `01` through `07` contain outputs and no stored error outputs.
@@ -80,7 +80,7 @@ The repository is in strong shape for a final portfolio-oriented push. Runtime d
 - `.venv/bin/python` Streamlit AppTest startup check for `app/Home.py` — passed after fix
 - `.venv/bin/streamlit run app/Home.py --server.headless true --server.port 8502` — passed
 - `.venv/bin/python` data integrity checks for atlas CSVs and embeddings parquet — passed
-- `.venv/bin/python` rebuild projection check via `scripts/rebuild_atlas_projection.py` — passed
+- `.venv/bin/python` rebuild projection check via `scripts/phase1/rebuild_atlas_projection.py` — passed
 - notebook JSON scan for stored error outputs in notebooks `01`–`07` — passed
 - repository secret-pattern scan — no matches found
 
