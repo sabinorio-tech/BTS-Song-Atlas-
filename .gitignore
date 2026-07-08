@@ -1,6 +1,12 @@
 .venv/
 .env
+.streamlit/secrets.toml
 .cache
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.coverage
+.DS_Store
+*.log
