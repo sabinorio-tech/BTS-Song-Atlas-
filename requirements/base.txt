@@ -7,3 +7,7 @@ tqdm
 ipywidgets
 sentence-transformers
 pyarrow
+umap-learn
+plotly
+nbformat
+hdbscan
