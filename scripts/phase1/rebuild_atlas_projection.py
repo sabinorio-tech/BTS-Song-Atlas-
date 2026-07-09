@@ -17,7 +17,9 @@ import umap
 from sklearn.neighbors import NearestNeighbors
 
 
-ROOT = Path(__file__).resolve().parents[1]
+# The script now lives under scripts/phase1/, so the project root is two
+# levels up from this file.
+ROOT = Path(__file__).resolve().parents[2]
 PROCESSED = ROOT / "data" / "processed"
 
 

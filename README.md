@@ -75,7 +75,7 @@ flowchart TD
     D --> E[05 Song master]
     E --> F[06 Multilingual embeddings]
     F --> G[07 Atlas research]
-    F --> H[scripts/rebuild_atlas_projection.py]
+    F --> H[scripts/phase1/rebuild_atlas_projection.py]
     H --> I[Canonical centroids + UMAP + HDBSCAN]
     I --> J[Streamlit-ready atlas]
 ```
@@ -144,10 +144,17 @@ This retains every release while producing a clearer and more balanced semantic 
 ├── data/
 │   ├── raw/                    # API results
 │   └── processed/              # Clean data, embeddings, atlas exports
-├── notebooks/                  # 01–07 research pipeline
+│       └── phase2/             # Phase 2 research outputs
+├── notebooks/
+│   ├── phase1/                 # 01–07 lyric atlas research pipeline
+│   └── phase2/                 # Reserved for archived Phase 2 notebook work
 ├── scripts/
-│   └── rebuild_atlas_projection.py
+│   ├── phase1/
+│   │   └── rebuild_atlas_projection.py
+│   └── phase2/                 # Feasibility and coverage research scripts
 ├── docs/
+│   ├── phase1/
+│   ├── phase2/                 # Audio similarity feasibility research
 │   ├── assets/                 # Portfolio screenshots and GIFs
 │   └── reports/                # Development and audit reports
 ├── .streamlit/config.toml      # Deployment-safe theme and server config
@@ -183,7 +190,7 @@ pip install -r requirements/base.txt
 The existing processed embeddings are sufficient; no API credentials are needed:
 
 ```bash
-python scripts/rebuild_atlas_projection.py
+python scripts/phase1/rebuild_atlas_projection.py
 ```
 
 API credentials are required only when rerunning the ingestion notebooks. Store them in an untracked `.env` file:
@@ -259,6 +266,15 @@ Detailed implementation history and validation notes are archived in [`docs/repo
 - Mobile-specific map controls.
 - Automated data and interaction tests in CI.
 - Hosted screenshots and an animated exploration demo.
+
+## Phase 2 Note
+
+Phase 2 investigated audio similarity as a separate recommendation engine, but the work was paused after a feasibility review. The main blocker was reproducible audio data access rather than model design. The current repository keeps Phase 2 as documented engineering research instead of a partially implemented product feature.
+
+See:
+
+- `docs/phase2/audio_similarity_feasibility_report.md`
+- `docs/phase2/spotify_audio_feature_check.md`
 
 ## Data note
 
