@@ -12,6 +12,95 @@ from utils import similar_songs
 PALETTE = ["#5b8cff", "#a95cff", "#42dc78", "#f4df3f", "#ff8a3d", "#ff4fa3", "#22d3ee"]
 
 
+def build_personal_atlas_figure(
+    data: pd.DataFrame,
+    color_mode: str,
+    size_by_plays: bool,
+) -> go.Figure:
+    """Map personal listening intensity without changing semantic coordinates."""
+    figure = go.Figure()
+    listened = data[data["has_listening_history"]].copy()
+    unexplored = data[~data["has_listening_history"]].copy()
+
+    if not unexplored.empty:
+        figure.add_trace(
+            go.Scattergl(
+                x=unexplored["x"],
+                y=unexplored["y"],
+                mode="markers",
+                name="Unexplored",
+                customdata=unexplored[
+                    ["track_name", "album_name", "personal_hours", "personal_plays", "mastery_level"]
+                ],
+                marker={"size": 5, "color": "#33235f", "opacity": .32, "line": {"width": 0}},
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>"
+                    "Hours: %{customdata[2]:.2f}<br>Plays: %{customdata[3]}<br>"
+                    "Mastery: Level %{customdata[4]}<extra></extra>"
+                ),
+            )
+        )
+
+    if not listened.empty:
+        marker_size = (
+            np.clip(7 + 1.6 * np.sqrt(listened["personal_plays"].to_numpy()), 8, 32)
+            if size_by_plays
+            else np.full(len(listened), 8)
+        )
+        if color_mode == "Listening intensity":
+            listened["listening_intensity"] = np.log1p(listened["personal_hours"])
+            marker = {
+                "size": marker_size,
+                "color": listened["listening_intensity"],
+                "colorscale": "Plasma",
+                "opacity": .88,
+                "line": {"color": "rgba(255,255,255,.25)", "width": .35},
+                "colorbar": {"title": "Intensity", "thickness": 10, "len": .65},
+            }
+            name = "Listening intensity"
+        else:
+            marker = {
+                "size": marker_size,
+                "color": listened["cluster"].map(
+                    lambda value: PALETTE[int(value) % len(PALETTE)] if value != -1 else "#555b70"
+                ),
+                "opacity": .84,
+                "line": {"color": "rgba(255,255,255,.25)", "width": .35},
+            }
+            name = "Semantic clusters"
+        figure.add_trace(
+            go.Scattergl(
+                x=listened["x"],
+                y=listened["y"],
+                mode="markers",
+                name=name,
+                customdata=listened[
+                    ["track_name", "album_name", "personal_hours", "personal_plays", "mastery_level"]
+                ],
+                marker=marker,
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>"
+                    "Hours: %{customdata[2]:.2f}<br>Plays: %{customdata[3]}<br>"
+                    "Mastery: Level %{customdata[4]}<extra></extra>"
+                ),
+            )
+        )
+
+    figure.update_layout(
+        height=610,
+        margin={"l": 8, "r": 8, "t": 12, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(5,7,24,.5)",
+        font={"color": "#ebe7f7"},
+        hoverlabel={"bgcolor": "#141124", "bordercolor": "#9d5cff"},
+        legend={"orientation": "h", "x": 0, "y": 1.02},
+        xaxis={"visible": False},
+        yaxis={"visible": False, "scaleanchor": "x", "scaleratio": 1},
+        dragmode="pan",
+    )
+    return figure
+
+
 def _add_weighted_edges(
     figure: go.Figure,
     center: pd.Series,
@@ -82,6 +171,78 @@ def _selected_row(
     canonical = selected.iloc[0].canonical_title
     representative = data[data["canonical_title"] == canonical]
     return representative.iloc[0] if not representative.empty else None
+
+
+def build_home_preview(data: pd.DataFrame) -> go.Figure:
+    """Return a decorative but truthful atlas preview for the landing page."""
+    figure = go.Figure()
+    primary = data[data["is_primary_version"]].copy()
+    groups, colors = _color_groups(primary, "Semantic Cluster")
+    preview = primary.assign(_group=groups)
+    for group, subset in preview.groupby("_group", sort=False):
+        figure.add_trace(
+            go.Scattergl(
+                x=subset["x"],
+                y=subset["y"],
+                mode="markers",
+                marker={
+                    "size": np.where(subset["cluster"].eq(-1), 3.6, 5.2),
+                    "color": colors[str(group)],
+                    "opacity": np.where(subset["cluster"].eq(-1), 0.24, 0.86),
+                    "line": {"width": 0},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    x_span = float(primary["x"].max() - primary["x"].min())
+    y_span = float(primary["y"].max() - primary["y"].min())
+    x_pad = max(x_span * 0.09, 0.4)
+    y_pad = max(y_span * 0.09, 0.4)
+    x_mid = float(primary["x"].mean())
+    y_mid = float(primary["y"].mean())
+    for scale, opacity in ((1.18, 0.10), (1.42, 0.06), (1.72, 0.04)):
+        figure.add_shape(
+            type="circle",
+            xref="x",
+            yref="y",
+            x0=x_mid - x_span * scale / 2,
+            x1=x_mid + x_span * scale / 2,
+            y0=y_mid - y_span * scale / 3,
+            y1=y_mid + y_span * scale / 3,
+            line={"color": f"rgba(183,110,255,{opacity})", "width": 1},
+        )
+
+    figure.add_annotation(
+        x=x_mid,
+        y=y_mid,
+        text="✦",
+        showarrow=False,
+        font={"size": 32, "color": "#d2b2ff"},
+        bgcolor="rgba(128,76,255,.14)",
+        bordercolor="rgba(191,153,255,.25)",
+        borderwidth=1,
+        borderpad=12,
+    )
+    figure.update_layout(
+        height=330,
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis={
+            "visible": False,
+            "range": [float(primary["x"].min()) - x_pad, float(primary["x"].max()) + x_pad],
+        },
+        yaxis={
+            "visible": False,
+            "range": [float(primary["y"].min()) - y_pad, float(primary["y"].max()) + y_pad],
+            "scaleanchor": "x",
+            "scaleratio": 1,
+        },
+        dragmode=False,
+    )
+    return figure
 
 
 def build_atlas_figure(
@@ -370,7 +531,7 @@ def build_atlas_figure(
         "visible": False,
         "fixedrange": False,
         "range": [float(data["x"].min()) - x_padding, float(data["x"].max()) + x_padding],
-        "constrain": "domain",
+        "constrain": "range",
     }
     yaxis: dict[str, object] = {
         "visible": False,
@@ -378,7 +539,7 @@ def build_atlas_figure(
         "range": [float(data["y"].min()) - y_padding, float(data["y"].max()) + y_padding],
         "scaleanchor": "x",
         "scaleratio": 1,
-        "constrain": "domain",
+        "constrain": "range",
     }
     focus = _selected_row(data, all_data, focus_id) if focus_id else None
     if focus is not None:
@@ -388,7 +549,7 @@ def build_atlas_figure(
         yaxis["range"] = [focus.y - y_window, focus.y + y_window]
 
     figure.update_layout(
-        height=820,
+        height=680,
         margin={"l": 5, "r": 5, "t": 5, "b": 5},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(5,7,21,.90)",

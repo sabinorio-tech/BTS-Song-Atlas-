@@ -12,6 +12,7 @@ import streamlit as st
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 PROCESSED_DIR = BASE_DIR / "data" / "processed"
+PERSONAL_DIR = PROCESSED_DIR / "personal_atlas"
 
 
 def canonical_title(title: str) -> str:
@@ -80,6 +81,21 @@ def load_embeddings() -> tuple[pd.DataFrame, np.ndarray]:
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)
     matrix = matrix / np.where(norms == 0, 1, norms)
     return embeddings[["track_id", "track_name", "album_name"]], matrix
+
+
+@st.cache_data(show_spinner=False)
+def load_personal_atlas_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load visualization-ready Personal Atlas production artifacts."""
+    personal_map = pd.read_parquet(PERSONAL_DIR / "personal_atlas_map.parquet")
+    song_league = pd.read_parquet(PERSONAL_DIR / "bts_song_league.parquet")
+    album_league = pd.read_parquet(PERSONAL_DIR / "bts_album_league.parquet")
+    return personal_map, song_league, album_league
+
+
+@st.cache_data(show_spinner=False)
+def load_personal_history() -> pd.DataFrame:
+    """Load event-level BTS listening history for timeline and recent plays."""
+    return pd.read_parquet(PERSONAL_DIR / "bts_listening_history.parquet")
 
 
 def similarity_scores(track_id: str) -> dict[str, float]:
