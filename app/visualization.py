@@ -12,6 +12,95 @@ from utils import similar_songs
 PALETTE = ["#5b8cff", "#a95cff", "#42dc78", "#f4df3f", "#ff8a3d", "#ff4fa3", "#22d3ee"]
 
 
+def build_personal_atlas_figure(
+    data: pd.DataFrame,
+    color_mode: str,
+    size_by_plays: bool,
+) -> go.Figure:
+    """Map personal listening intensity without changing semantic coordinates."""
+    figure = go.Figure()
+    listened = data[data["has_listening_history"]].copy()
+    unexplored = data[~data["has_listening_history"]].copy()
+
+    if not unexplored.empty:
+        figure.add_trace(
+            go.Scattergl(
+                x=unexplored["x"],
+                y=unexplored["y"],
+                mode="markers",
+                name="Unexplored",
+                customdata=unexplored[
+                    ["track_name", "album_name", "personal_hours", "personal_plays", "mastery_level"]
+                ],
+                marker={"size": 5, "color": "#33235f", "opacity": .32, "line": {"width": 0}},
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>"
+                    "Hours: %{customdata[2]:.2f}<br>Plays: %{customdata[3]}<br>"
+                    "Mastery: Level %{customdata[4]}<extra></extra>"
+                ),
+            )
+        )
+
+    if not listened.empty:
+        marker_size = (
+            np.clip(7 + 1.6 * np.sqrt(listened["personal_plays"].to_numpy()), 8, 32)
+            if size_by_plays
+            else np.full(len(listened), 8)
+        )
+        if color_mode == "Listening intensity":
+            listened["listening_intensity"] = np.log1p(listened["personal_hours"])
+            marker = {
+                "size": marker_size,
+                "color": listened["listening_intensity"],
+                "colorscale": "Plasma",
+                "opacity": .88,
+                "line": {"color": "rgba(255,255,255,.25)", "width": .35},
+                "colorbar": {"title": "Intensity", "thickness": 10, "len": .65},
+            }
+            name = "Listening intensity"
+        else:
+            marker = {
+                "size": marker_size,
+                "color": listened["cluster"].map(
+                    lambda value: PALETTE[int(value) % len(PALETTE)] if value != -1 else "#555b70"
+                ),
+                "opacity": .84,
+                "line": {"color": "rgba(255,255,255,.25)", "width": .35},
+            }
+            name = "Semantic clusters"
+        figure.add_trace(
+            go.Scattergl(
+                x=listened["x"],
+                y=listened["y"],
+                mode="markers",
+                name=name,
+                customdata=listened[
+                    ["track_name", "album_name", "personal_hours", "personal_plays", "mastery_level"]
+                ],
+                marker=marker,
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>%{customdata[1]}<br>"
+                    "Hours: %{customdata[2]:.2f}<br>Plays: %{customdata[3]}<br>"
+                    "Mastery: Level %{customdata[4]}<extra></extra>"
+                ),
+            )
+        )
+
+    figure.update_layout(
+        height=610,
+        margin={"l": 8, "r": 8, "t": 12, "b": 8},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(5,7,24,.5)",
+        font={"color": "#ebe7f7"},
+        hoverlabel={"bgcolor": "#141124", "bordercolor": "#9d5cff"},
+        legend={"orientation": "h", "x": 0, "y": 1.02},
+        xaxis={"visible": False},
+        yaxis={"visible": False, "scaleanchor": "x", "scaleratio": 1},
+        dragmode="pan",
+    )
+    return figure
+
+
 def _add_weighted_edges(
     figure: go.Figure,
     center: pd.Series,

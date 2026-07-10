@@ -14,11 +14,14 @@ import streamlit as st
 from utils import (
     format_duration,
     load_dashboard_data,
+    load_personal_atlas_data,
+    load_personal_history,
     pair_similarity,
     semantic_story,
     similar_songs,
 )
-from visualization import build_atlas_figure, build_home_preview, build_minimap
+from visualization import build_atlas_figure, build_home_preview, build_minimap, build_personal_atlas_figure
+from views.router import render_page
 
 
 ALL_SONGS = "__all_songs__"
@@ -63,7 +66,7 @@ NAV_ITEMS = [
         "label": "Personal Atlas",
         "subtitle": "Your listening journey",
         "icon": "◌",
-        "badge": "Soon",
+        "badge": None,
     },
     {
         "slug": "about",
@@ -474,6 +477,267 @@ def render_placeholder_page(title: str, subtitle: str, description: str) -> None
     )
 
 
+def _render_personal_metric(label: str, value: str, note: str, icon: str) -> None:
+    st.markdown(
+        f'<div class="personal-metric"><div class="personal-metric-icon">{_safe(icon)}</div>'
+        f'<div><div class="personal-metric-label">{_safe(label)}</div>'
+        f'<div class="personal-metric-value">{_safe(value)}</div>'
+        f'<div class="personal-metric-note">{_safe(note)}</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_ranked_list(data: pd.DataFrame, title_column: str, subtitle_column: str) -> None:
+    rows = []
+    for rank, row in enumerate(data.head(7).itertuples(index=False), 1):
+        values = row._asdict()
+        rows.append(
+            f'<div class="personal-rank-row"><span class="personal-rank-number">{rank}</span>'
+            f'<div class="personal-rank-copy"><b>{_safe(values[title_column])}</b>'
+            f'<span>{_safe(values[subtitle_column])}</span></div>'
+            f'<strong>{float(values["hours_played"]):.2f}h</strong></div>'
+        )
+    st.markdown(f'<div class="personal-ranked-list">{"".join(rows)}</div>', unsafe_allow_html=True)
+
+
+def _render_mastery_section(personal_map: pd.DataFrame) -> None:
+    mastery_counts = personal_map["mastery_level"].value_counts().sort_index()
+    mastery_colors = ["#34205f", "#6630c8", "#a13bc2", "#dc4c91", "#ff9f32"]
+    figure = go.Figure()
+    for level, count in mastery_counts.items():
+        figure.add_trace(
+            go.Bar(
+                x=[int(count)],
+                y=["Songs"],
+                orientation="h",
+                name=f"Level {int(level)}",
+                marker_color=mastery_colors[int(level) % len(mastery_colors)],
+                hovertemplate=f"Level {int(level)}: %{{x}} songs<extra></extra>",
+            )
+        )
+    figure.update_layout(
+        barmode="stack",
+        height=175,
+        margin={"l": 8, "r": 8, "t": 10, "b": 34},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#dcd7e9", "size": 11},
+        legend={"orientation": "h", "x": 0, "y": -.2},
+        xaxis={"visible": False},
+        yaxis={"visible": False},
+    )
+    st.plotly_chart(
+        figure,
+        width="stretch",
+        config={"displayModeBar": False, "displaylogo": False},
+        key="personal_mastery_plot",
+    )
+
+
+def render_personal_atlas_page() -> None:
+    st.markdown(
+        """
+        <div class="personal-hero">
+          <div class="personal-hero-icon">♙</div>
+          <div><h1>Personal <span>Atlas</span></h1>
+          <p>Your listening journey across the BTS universe.</p></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    try:
+        personal_map, song_league, album_league = load_personal_atlas_data()
+    except (FileNotFoundError, OSError, ValueError):
+        st.markdown(
+            '<div class="personal-empty"><b>Your Personal Atlas data is not available yet.</b>'
+            '<span>Add a Spotify Extended Streaming History export and run the Personal Atlas pipeline.</span></div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    if personal_map.empty:
+        st.markdown(
+            '<div class="personal-empty"><b>Your Personal Atlas is empty.</b>'
+            '<span>Run the Personal Atlas pipeline after adding listening history.</span></div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    personal_map = personal_map.copy()
+    personal_map["has_listening_history"] = personal_map["has_listening_history"].fillna(False).astype(bool)
+    explored = int(personal_map["has_listening_history"].sum())
+    highest_level = int(personal_map["mastery_level"].max())
+    total_hours = float(song_league["hours_played"].sum()) if not song_league.empty else 0.0
+    explored_albums = int(album_league.loc[album_league["hours_played"] > 0, "master_metadata_album_album_name"].nunique())
+    total_albums = int(album_league["master_metadata_album_album_name"].nunique())
+
+    metric_columns = st.columns(4, gap="small")
+    metrics = [
+        ("Total listening hours", f"{total_hours:.1f}h", "Across matched BTS history", "◉"),
+        ("Songs explored", f"{explored} / {len(personal_map)}", f"{explored / len(personal_map):.1%} of releases", "♫"),
+        ("Albums explored", f"{explored_albums} / {total_albums}", "Listening-history albums", "◌"),
+        ("Highest mastery", f"Level {highest_level}", "Based on listening hours", "✦"),
+    ]
+    for column, metric in zip(metric_columns, metrics, strict=True):
+        with column:
+            _render_personal_metric(*metric)
+
+    map_column, side_column = st.columns([2.15, 1], gap="small")
+    with map_column:
+        with st.container(border=True, key="personal_map_card"):
+            title_column, controls_column = st.columns([1.25, 1], gap="small")
+            with title_column:
+                st.markdown(
+                    '<div class="personal-section-title">Your listening intensity</div>'
+                    '<div class="personal-section-copy">Each point is a BTS song release in the semantic atlas.</div>',
+                    unsafe_allow_html=True,
+                )
+            with controls_column:
+                color_mode = st.segmented_control(
+                    "Color mode",
+                    ["Listening intensity", "Semantic clusters"],
+                    default="Listening intensity",
+                    label_visibility="collapsed",
+                    key="personal_color_mode",
+                )
+            control_columns = st.columns([1.4, 1, 1.25, 1], gap="small")
+            with control_columns[0]:
+                personal_options = personal_map.sort_values(["track_name", "album_name"])
+                personal_labels = personal_options.set_index("track_id").apply(
+                    lambda row: f"{row['track_name']} · {row['album_name']}",
+                    axis=1,
+                ).to_dict()
+                personal_labels[ALL_SONGS] = "All songs"
+                selected_personal_song = st.selectbox(
+                    "Find a song or album",
+                    [ALL_SONGS, *personal_options["track_id"].tolist()],
+                    format_func=lambda track_id: personal_labels[track_id],
+                    label_visibility="collapsed",
+                    key="personal_song_select",
+                )
+            with control_columns[1]:
+                listened_only = st.toggle("Listened only", key="personal_listened_only")
+            with control_columns[2]:
+                show_duplicates = st.toggle(
+                    "Show duplicate releases",
+                    value=False,
+                    key="personal_show_duplicates",
+                )
+            with control_columns[3]:
+                size_by_plays = st.toggle("Size by plays", value=True, key="personal_size_by_plays")
+
+            visible_map = personal_map
+            if listened_only:
+                visible_map = visible_map[visible_map["has_listening_history"]]
+            if selected_personal_song != ALL_SONGS:
+                visible_map = visible_map[visible_map["track_id"] == selected_personal_song]
+            if not show_duplicates:
+                visible_map = (
+                    visible_map.sort_values("is_primary_version", ascending=False)
+                    .drop_duplicates("canonical_title")
+                )
+            if visible_map.empty:
+                st.info("No songs match the current Personal Atlas filters.")
+            else:
+                st.plotly_chart(
+                    build_personal_atlas_figure(visible_map, color_mode, size_by_plays),
+                    width="stretch",
+                    config={"displaylogo": False, "scrollZoom": True, "responsive": True},
+                    key="personal_atlas_plot",
+                )
+            st.caption("Brighter points represent more listening. Unexplored songs remain as quiet landmarks.")
+
+    with side_column:
+        with st.container(border=True, key="personal_top_songs"):
+            st.markdown('<div class="personal-section-title">Top songs</div>', unsafe_allow_html=True)
+            _render_ranked_list(
+                song_league.sort_values("hours_played", ascending=False),
+                "master_metadata_track_name",
+                "master_metadata_album_album_name",
+            )
+        with st.container(border=True, key="personal_top_albums"):
+            st.markdown('<div class="personal-section-title">Top albums</div>', unsafe_allow_html=True)
+            _render_ranked_list(
+                album_league.sort_values("hours_played", ascending=False),
+                "master_metadata_album_album_name",
+                "master_metadata_album_artist_name",
+            )
+
+    mastery_column, timeline_column, unexplored_column = st.columns([1.25, 1.25, 1], gap="small")
+    with mastery_column:
+        with st.container(border=True, key="personal_mastery_card"):
+            st.markdown(
+                '<div class="personal-section-title">Listening by mastery level</div>'
+                '<div class="personal-section-copy">Level 0 is unexplored; higher levels reflect more listening time.</div>',
+                unsafe_allow_html=True,
+            )
+            _render_mastery_section(personal_map)
+
+    try:
+        history = load_personal_history().copy()
+        history["ts"] = pd.to_datetime(history["ts"], utc=True, errors="coerce")
+        history = history.dropna(subset=["ts"])
+    except (FileNotFoundError, OSError, ValueError):
+        history = pd.DataFrame()
+
+    with timeline_column:
+        with st.container(border=True, key="personal_timeline_card"):
+            st.markdown('<div class="personal-section-title">Listening timeline</div>', unsafe_allow_html=True)
+            if history.empty:
+                st.caption("Event-level listening history is unavailable.")
+            else:
+                monthly = history.set_index("ts")["hours_played"].resample("MS").sum()
+                timeline = go.Figure(
+                    go.Scatter(
+                        x=monthly.index,
+                        y=monthly.values,
+                        mode="lines+markers",
+                        line={"color": "#a95cff", "width": 2.5},
+                        marker={"size": 5, "color": "#d780ff"},
+                        fill="tozeroy",
+                        fillcolor="rgba(139,65,235,.14)",
+                        hovertemplate="%{x|%b %Y}<br>%{y:.2f} hours<extra></extra>",
+                    )
+                )
+                timeline.update_layout(
+                    height=220,
+                    margin={"l": 6, "r": 6, "t": 14, "b": 8},
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font={"color": "#9fa4be", "size": 10},
+                    xaxis={"showgrid": False},
+                    yaxis={"gridcolor": "rgba(255,255,255,.05)", "title": "Hours"},
+                )
+                st.plotly_chart(timeline, width="stretch", config={"displayModeBar": False}, key="personal_timeline")
+
+    with unexplored_column:
+        with st.container(border=True, key="personal_unexplored_card"):
+            st.markdown('<div class="personal-section-title">Unexplored songs</div>', unsafe_allow_html=True)
+            listened_titles = set(personal_map.loc[personal_map["has_listening_history"], "canonical_title"])
+            unexplored_releases = personal_map[~personal_map["has_listening_history"]].copy()
+            unexplored_releases["listened_elsewhere"] = unexplored_releases["canonical_title"].isin(listened_titles)
+            alternate_releases = int(unexplored_releases["listened_elsewhere"].sum())
+            unexplored_songs = (
+                unexplored_releases[~unexplored_releases["listened_elsewhere"]]
+                .sort_values(["is_primary_version", "track_name"], ascending=[False, True])
+                .drop_duplicates("canonical_title")
+            )
+            if unexplored_songs.empty:
+                st.caption("Every canonical song in the current atlas has listening history.")
+            else:
+                items = []
+                for row in unexplored_songs.itertuples():
+                    items.append(
+                        f'<div class="personal-recent-row"><div><b>{_safe(row.track_name)}</b>'
+                        f'<span>{_safe(row.album_name)}</span></div></div>'
+                    )
+                st.markdown(f'<div class="personal-recent-list personal-unexplored-list">{"".join(items)}</div>', unsafe_allow_html=True)
+                st.caption(
+                    f"{len(unexplored_songs)} canonical songs are unexplored. "
+                    f"Another {alternate_releases} unplayed releases are alternate versions of songs you have heard."
+                )
+
+
 def render_about_page(data: pd.DataFrame) -> None:
     stats = _stats_summary(data)
     st.markdown(
@@ -715,11 +979,11 @@ def render_home_page(data: pd.DataFrame) -> None:
         {
             "title": "Personal Atlas",
             "subtitle": "Your Listening Journey",
-            "description": "Map your Spotify listening history onto the atlas. Coming soon.",
+            "description": "See your Spotify listening history glow across the semantic atlas.",
             "icon": "◌",
-            "action": "Coming soon",
+            "action": "Open Personal Atlas",
             "slug": "personal",
-            "soon": True,
+            "soon": False,
         },
     ]
     rows = [cards[:3], cards[3:]]
@@ -1037,35 +1301,13 @@ def render_dashboard() -> None:
     current_page = _current_page()
     render_app_sidebar(data, current_page)
 
-    if current_page == "home":
-        render_home_page(data)
-    elif current_page == "atlas":
-        render_atlas_workspace(
-            data,
-            page_title="The Semantic Atlas",
-            subtitle="The default analytical map for exploring lyrical meaning and building journeys across the BTS universe.",
-            forced_mode="Explore",
-        )
-    elif current_page == "compare":
-        render_atlas_workspace(
-            data,
-            page_title="Compare Songs & Themes",
-            subtitle="Place two songs side by side and measure how their semantic neighborhoods overlap.",
-            forced_mode="Compare",
-        )
-    elif current_page == "insights":
-        render_insights_page(data)
-    elif current_page == "about":
-        render_about_page(data)
-    elif current_page == "explorer":
-        render_placeholder_page(
-            "3D Semantic Explorer",
-            "The 2D atlas remains the default analytical view.",
-            "This future mode will let users fly through the semantic universe while keeping the current 2D atlas as the primary map for reading patterns and relationships.",
-        )
-    elif current_page == "personal":
-        render_placeholder_page(
-            "Personal Atlas",
-            "Map your Spotify listening history onto the semantic atlas.",
-            "Coming soon. This future experience will connect your listening journey to the lyrical universe without changing the current atlas pipeline.",
-        )
+    render_page(
+        current_page,
+        data,
+        home_page=render_home_page,
+        atlas_workspace=render_atlas_workspace,
+        insights_page=render_insights_page,
+        about_page=render_about_page,
+        personal_page=render_personal_atlas_page,
+        placeholder_page=render_placeholder_page,
+    )

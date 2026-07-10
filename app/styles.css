@@ -606,6 +606,134 @@ div[data-testid="stMultiSelect"] > div {
 }
 hr { border-color: rgba(146,120,200,.14); }
 
+.personal-hero {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin: 0.2rem 0 1.1rem;
+}
+.personal-hero-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid rgba(177,93,255,.28);
+  border-radius: 16px;
+  background: rgba(126,53,213,.12);
+  color: #bd6dff;
+  font-size: 1.6rem;
+  box-shadow: 0 0 28px rgba(162,72,255,.13);
+}
+.personal-hero h1 {
+  margin: 0;
+  color: #f7f3ff;
+  font-size: 2.4rem;
+  font-weight: 850;
+  line-height: 1.05;
+}
+.personal-hero h1 span { color: #b15dff; }
+.personal-hero p { margin: 0.35rem 0 0; color: #a9adc2; font-size: 1rem; }
+
+.personal-metric {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 104px;
+  margin-bottom: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(157,126,220,.14);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(18,18,40,.92), rgba(8,11,28,.88));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 12px 32px rgba(0,0,0,.16);
+}
+.personal-metric-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  background: rgba(132,54,219,.13);
+  color: #c36dff;
+  font-size: 1.35rem;
+}
+.personal-metric-label { color: #dcd8e9; font-size: 0.75rem; font-weight: 650; }
+.personal-metric-value { margin-top: 0.15rem; color: #fff; font-size: 1.45rem; font-weight: 830; }
+.personal-metric-note { margin-top: 0.18rem; color: #858aa3; font-size: 0.67rem; }
+
+.personal-section-title { color: #f1edf9; font-size: 1rem; font-weight: 760; }
+.personal-section-copy { margin-top: 0.2rem; color: #8f94aa; font-size: 0.73rem; line-height: 1.45; }
+.st-key-personal_map_card,
+.st-key-personal_top_songs,
+.st-key-personal_top_albums,
+.st-key-personal_mastery_card,
+.st-key-personal_timeline_card,
+.st-key-personal_unexplored_card {
+  border-color: rgba(157,126,220,.15) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(145deg, rgba(11,13,33,.92), rgba(6,9,25,.9));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.02), 0 16px 38px rgba(0,0,0,.14);
+}
+.st-key-personal_top_songs,
+.st-key-personal_top_albums { margin-bottom: 0.65rem; }
+.st-key-personal_map_card [data-testid="stPlotlyChart"] { margin-top: -0.25rem; }
+
+.personal-ranked-list { margin-top: 0.55rem; }
+.personal-rank-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0,1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 43px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+}
+.personal-rank-number { color: #737991; font-size: 0.7rem; text-align: center; }
+.personal-rank-copy { min-width: 0; }
+.personal-rank-copy b,
+.personal-rank-copy span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.personal-rank-copy b { color: #efecf6; font-size: 0.72rem; font-weight: 650; }
+.personal-rank-copy span { margin-top: 0.12rem; color: #777d96; font-size: 0.58rem; }
+.personal-rank-row strong { color: #cbb5ed; font-size: 0.68rem; font-weight: 650; }
+
+.personal-recent-list { margin-top: 0.55rem; }
+.personal-unexplored-list {
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 0.3rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(157,92,231,.58) transparent;
+}
+.personal-unexplored-list::-webkit-scrollbar { width: 6px; }
+.personal-unexplored-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(157,92,231,.58);
+}
+.personal-unexplored-list .personal-recent-row { grid-template-columns: minmax(0,1fr); }
+.personal-recent-row {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 43px;
+  border-bottom: 1px solid rgba(255,255,255,.045);
+}
+.personal-recent-row b,
+.personal-recent-row span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.personal-recent-row b { color: #efecf6; font-size: 0.7rem; }
+.personal-recent-row span { color: #777d96; font-size: 0.58rem; margin-top: 0.12rem; }
+.personal-recent-row time { color: #858ba2; font-size: 0.57rem; }
+.personal-empty {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 48rem;
+  padding: 1.4rem;
+  border: 1px solid rgba(177,93,255,.18);
+  border-radius: 20px;
+  background: rgba(15,14,35,.82);
+}
+.personal-empty b { color: #f4effc; font-size: 1.1rem; }
+.personal-empty span { color: #9ca1b8; }
+
 @media (max-width: 1200px) {
   .hero-title { font-size: 2.8rem; }
 }
@@ -615,4 +743,6 @@ hr { border-color: rgba(146,120,200,.14); }
   .metric-value { font-size: 1.55rem; }
   .experience-card { min-height: 0; }
   .sidebar-subtitle { font-size: 0.82rem; }
+  .personal-hero h1 { font-size: 2rem; }
+  .personal-metric { min-height: 92px; }
 }
