@@ -199,7 +199,7 @@ Fitting UMAP directly on all releases caused repeated versions and identical lyr
 
 ## 8. Improved projection
 
-A new reproducible projection process was added in `scripts/phase1/rebuild_atlas_projection.py`.
+A new reproducible projection process was added in `scripts/core/rebuild_atlas_projection.py`.
 
 ### Canonical-song construction
 
@@ -314,7 +314,7 @@ The pre-existing empty Song Explorer, Statistics, and About pages were not popul
 
 ### Projection pipeline
 
-- `scripts/phase1/rebuild_atlas_projection.py` — reproducible canonical-centroid projection and clustering pipeline.
+- `scripts/core/rebuild_atlas_projection.py` — reproducible canonical-centroid projection and clustering pipeline.
 
 ### Data
 
@@ -332,7 +332,7 @@ streamlit run app/Home.py
 Rebuild the improved projection from the current embeddings:
 
 ```bash
-python scripts/phase1/rebuild_atlas_projection.py
+python scripts/core/rebuild_atlas_projection.py
 ```
 
 The rebuild script uses only local processed data and does not call Spotify, Genius, or any external model.

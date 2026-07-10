@@ -1,5 +1,7 @@
 .venv/
 .env
+.env.*
+!.env.example
 .streamlit/secrets.toml
 .cache
 __pycache__/
@@ -10,3 +12,16 @@ __pycache__/
 .coverage
 .DS_Store
 *.log
+
+# Private Personal Atlas source exports. Curated processed artifacts used by
+# the deployed application remain intentionally trackable.
+data/raw/personal_atlas/
+data/raw/**/Streaming_History_*.json
+data/raw/**/*.json:Zone.Identifier
+
+# Local research downloads and generated audio files.
+data/external/audio/
+*.mp3
+*.wav
+*.flac
+*.m4a

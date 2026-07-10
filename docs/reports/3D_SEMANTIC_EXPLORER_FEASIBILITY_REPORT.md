@@ -25,7 +25,7 @@ It is technically achievable with the current stack, the dataset size is small e
 
 Yes.
 
-The current projection script already builds canonical-song centroids and fits UMAP on those centroids in [scripts/phase1/rebuild_atlas_projection.py](/home/seans/becode/projects/BTS-Song-Atlas-/scripts/phase1/rebuild_atlas_projection.py:1). Right now the script uses:
+The current projection script already builds canonical-song centroids and fits UMAP on those centroids in [scripts/core/rebuild_atlas_projection.py](../../scripts/core/rebuild_atlas_projection.py). Right now the script uses:
 
 - the same normalized lyric embeddings
 - the same canonical-title grouping
@@ -115,7 +115,7 @@ Supported. `Scatter3d` supports `hovertemplate`, so the current tooltip style ca
 
 Likely workable for the current app model, but this is the main area that deserves a prototype before implementation.
 
-The current app relies on Streamlit’s Plotly selection return value in [app/components.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/components.py:448), using:
+The current app relies on Streamlit’s Plotly selection return value in [app/components.py](../../app/components.py), using:
 
 - `on_select="rerun"`
 - `selection_mode="points"`
@@ -145,7 +145,7 @@ Reasonable for desktop and tablet. Less convincing for mobile because 3D gesture
 
 Yes.
 
-Search is UI-state driven in [app/components.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/components.py:109) and does not depend on the chart being 2D. A selected `track_id` can still be found and highlighted in 3D.
+Search is UI-state driven in [app/components.py](../../app/components.py) and does not depend on the chart being 2D. A selected `track_id` can still be found and highlighted in 3D.
 
 ### Hover tooltips
 
@@ -161,13 +161,13 @@ Probably yes for single-point selection, but it will feel less reliable than 2D 
 
 Yes.
 
-Nearest-neighbor logic comes from embedding similarity in [app/utils.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/utils.py:77), not from the plotted coordinates. The 3D chart only changes how those relationships are displayed.
+Nearest-neighbor logic comes from embedding similarity in [app/utils.py](../../app/utils.py), not from the plotted coordinates. The 3D chart only changes how those relationships are displayed.
 
 ### Highlighted selections
 
 Yes.
 
-Selected-song halos, neighbor highlighting, compare colors, and journey paths can all be recreated in `Scatter3d` with separate traces, the same way the current 2D atlas layers traces in [app/visualization.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/visualization.py:87).
+Selected-song halos, neighbor highlighting, compare colors, and journey paths can all be recreated in `Scatter3d` with separate traces, the same way the current 2D atlas layers traces in [app/visualization.py](../../app/visualization.py).
 
 ### Journey mode
 
@@ -302,17 +302,17 @@ Recommended contents:
 
 ### Notebooks affected
 
-- [notebooks/phase1/07_song_atlas.ipynb](/home/seans/becode/projects/BTS-Song-Atlas-/notebooks/phase1/07_song_atlas.ipynb:1) if exploratory 3D prototyping is done notebook-first
+- [notebooks/core/07_song_atlas.ipynb](../../notebooks/core/07_song_atlas.ipynb) if exploratory 3D prototyping is done notebook-first
 
 ### Scripts affected
 
-- [scripts/phase1/rebuild_atlas_projection.py](/home/seans/becode/projects/BTS-Song-Atlas-/scripts/phase1/rebuild_atlas_projection.py:1) or a parallel new script for 3D coordinate generation
+- [scripts/core/rebuild_atlas_projection.py](../../scripts/core/rebuild_atlas_projection.py) or a parallel new script for 3D coordinate generation
 
 ### App files affected
 
-- [app/visualization.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/visualization.py:1)
-- [app/components.py](/home/seans/becode/projects/BTS-Song-Atlas-/app/components.py:1)
-- possibly [app/styles.css](/home/seans/becode/projects/BTS-Song-Atlas-/app/styles.css:1)
+- [app/visualization.py](../../app/visualization.py)
+- [app/components.py](../../app/components.py)
+- possibly [app/styles.css](../../app/styles.css)
 
 ### Data files affected
 

@@ -138,7 +138,7 @@ Application responsibilities are separated as follows:
 - `app/utils.py` — data loading, metadata enrichment, similarity, and story helpers.
 - `app/styles.css` — visual design system.
 - `app/utiles.py` — compatibility import shim.
-- `scripts/phase1/rebuild_atlas_projection.py` — reproducible production projection rebuild.
+- `scripts/core/rebuild_atlas_projection.py` — reproducible production projection rebuild.
 
 Research remains in notebooks, production transformation is in `scripts/`, and application behavior remains in `app/`.
 

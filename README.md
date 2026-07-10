@@ -75,7 +75,7 @@ flowchart TD
     D --> E[05 Song master]
     E --> F[06 Multilingual embeddings]
     F --> G[07 Atlas research]
-    F --> H[scripts/phase1/rebuild_atlas_projection.py]
+    F --> H[scripts/core/rebuild_atlas_projection.py]
     H --> I[Canonical centroids + UMAP + HDBSCAN]
     I --> J[Streamlit-ready atlas]
 ```
@@ -137,24 +137,30 @@ This retains every release while producing a clearer and more balanced semantic 
 .
 ├── app/
 │   ├── Home.py                 # Streamlit entry point
+│   ├── views/                  # Page-level route ownership
 │   ├── components.py           # Layout and interaction state
 │   ├── visualization.py        # Plotly atlas and overview map
 │   ├── utils.py                # Data, similarity, and story helpers
 │   └── styles.css              # Visual system
 ├── data/
-│   ├── raw/                    # API results
-│   └── processed/              # Clean data, embeddings, atlas exports
-│       └── phase2/             # Phase 2 research outputs
+│   ├── raw/
+│   │   ├── core/               # Spotify and Genius source exports
+│   │   └── personal_atlas/     # Private Spotify history; ignored by Git
+│   └── processed/              # Stable production artifacts
+│       ├── personal_atlas/     # Curated Personal Atlas application data
+│       └── research/           # Documented research evidence
 ├── notebooks/
-│   ├── phase1/                 # 01–07 lyric atlas research pipeline
-│   └── phase2/                 # Reserved for archived Phase 2 notebook work
+│   ├── core/                   # 01–07 semantic atlas pipeline
+│   └── personal_atlas/         # Listening-history matching and mapping
 ├── scripts/
-│   ├── phase1/
+│   ├── core/
 │   │   └── rebuild_atlas_projection.py
-│   └── phase2/                 # Feasibility and coverage research scripts
+│   └── research/
+│       └── audio_similarity/   # Feasibility and endpoint checks
 ├── docs/
-│   ├── phase1/
-│   ├── phase2/                 # Audio similarity feasibility research
+│   ├── architecture/           # Repository and system decisions
+│   ├── personal_atlas/         # Personal Atlas implementation report
+│   ├── research/               # Research reports by topic
 │   ├── assets/                 # Portfolio screenshots and GIFs
 │   └── reports/                # Development and audit reports
 ├── .streamlit/config.toml      # Deployment-safe theme and server config
@@ -190,7 +196,7 @@ pip install -r requirements/base.txt
 The existing processed embeddings are sufficient; no API credentials are needed:
 
 ```bash
-python scripts/phase1/rebuild_atlas_projection.py
+python scripts/core/rebuild_atlas_projection.py
 ```
 
 API credentials are required only when rerunning the ingestion notebooks. Store them in an untracked `.env` file:
@@ -267,15 +273,27 @@ Detailed implementation history and validation notes are archived in [`docs/repo
 - Automated data and interaction tests in CI.
 - Hosted screenshots and an animated exploration demo.
 
-## Phase 2 Note
+## Workstream status
 
-Phase 2 investigated audio similarity as a separate recommendation engine, but the work was paused after a feasibility review. The main blocker was reproducible audio data access rather than model design. The current repository keeps Phase 2 as documented engineering research instead of a partially implemented product feature.
+| Workstream | Type | Status |
+|---|---|---|
+| Semantic Atlas | Core product | Complete |
+| Personal Atlas | Product feature | Complete |
+| BTS Universe | Catalog expansion | In progress |
+| Audio similarity | Research | Paused due to data availability |
+| 3D Explorer | Product feature | Feasibility confirmed |
+
+Audio similarity investigated a separate recommendation engine, but the work was paused after a feasibility review. The main blocker was reproducible audio-data access rather than model design. It remains documented research instead of a partially implemented product feature.
 
 See:
 
-- `docs/phase2/audio_similarity_feasibility_report.md`
-- `docs/phase2/spotify_audio_feature_check.md`
+- [`audio_similarity_feasibility_report.md`](docs/research/audio_similarity/audio_similarity_feasibility_report.md)
+- [`spotify_audio_feature_check.md`](docs/research/audio_similarity/spotify_audio_feature_check.md)
+
+Repository folders describe stable responsibilities rather than release numbers. See [`repository_organization.md`](docs/architecture/repository_organization.md) for the practical decision log.
 
 ## Data note
 
 Spotify supplies release metadata and artwork URLs. Genius supplies lyric matches and source links. The application is an educational semantic exploration project and is not affiliated with BTS, HYBE, Spotify, or Genius.
+
+Raw Spotify Extended Streaming History is private and ignored under `data/raw/personal_atlas/`. Only intentionally curated processed Personal Atlas artifacts required by the deployed experience belong in version control. Never commit a new raw history export, `.env`, or Streamlit secrets file.
