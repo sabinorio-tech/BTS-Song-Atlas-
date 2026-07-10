@@ -84,6 +84,78 @@ def _selected_row(
     return representative.iloc[0] if not representative.empty else None
 
 
+def build_home_preview(data: pd.DataFrame) -> go.Figure:
+    """Return a decorative but truthful atlas preview for the landing page."""
+    figure = go.Figure()
+    primary = data[data["is_primary_version"]].copy()
+    groups, colors = _color_groups(primary, "Semantic Cluster")
+    preview = primary.assign(_group=groups)
+    for group, subset in preview.groupby("_group", sort=False):
+        figure.add_trace(
+            go.Scattergl(
+                x=subset["x"],
+                y=subset["y"],
+                mode="markers",
+                marker={
+                    "size": np.where(subset["cluster"].eq(-1), 3.6, 5.2),
+                    "color": colors[str(group)],
+                    "opacity": np.where(subset["cluster"].eq(-1), 0.24, 0.86),
+                    "line": {"width": 0},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    x_span = float(primary["x"].max() - primary["x"].min())
+    y_span = float(primary["y"].max() - primary["y"].min())
+    x_pad = max(x_span * 0.09, 0.4)
+    y_pad = max(y_span * 0.09, 0.4)
+    x_mid = float(primary["x"].mean())
+    y_mid = float(primary["y"].mean())
+    for scale, opacity in ((1.18, 0.10), (1.42, 0.06), (1.72, 0.04)):
+        figure.add_shape(
+            type="circle",
+            xref="x",
+            yref="y",
+            x0=x_mid - x_span * scale / 2,
+            x1=x_mid + x_span * scale / 2,
+            y0=y_mid - y_span * scale / 3,
+            y1=y_mid + y_span * scale / 3,
+            line={"color": f"rgba(183,110,255,{opacity})", "width": 1},
+        )
+
+    figure.add_annotation(
+        x=x_mid,
+        y=y_mid,
+        text="✦",
+        showarrow=False,
+        font={"size": 32, "color": "#d2b2ff"},
+        bgcolor="rgba(128,76,255,.14)",
+        bordercolor="rgba(191,153,255,.25)",
+        borderwidth=1,
+        borderpad=12,
+    )
+    figure.update_layout(
+        height=330,
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis={
+            "visible": False,
+            "range": [float(primary["x"].min()) - x_pad, float(primary["x"].max()) + x_pad],
+        },
+        yaxis={
+            "visible": False,
+            "range": [float(primary["y"].min()) - y_pad, float(primary["y"].max()) + y_pad],
+            "scaleanchor": "x",
+            "scaleratio": 1,
+        },
+        dragmode=False,
+    )
+    return figure
+
+
 def build_atlas_figure(
     data: pd.DataFrame,
     all_data: pd.DataFrame,
@@ -370,7 +442,7 @@ def build_atlas_figure(
         "visible": False,
         "fixedrange": False,
         "range": [float(data["x"].min()) - x_padding, float(data["x"].max()) + x_padding],
-        "constrain": "domain",
+        "constrain": "range",
     }
     yaxis: dict[str, object] = {
         "visible": False,
@@ -378,7 +450,7 @@ def build_atlas_figure(
         "range": [float(data["y"].min()) - y_padding, float(data["y"].max()) + y_padding],
         "scaleanchor": "x",
         "scaleratio": 1,
-        "constrain": "domain",
+        "constrain": "range",
     }
     focus = _selected_row(data, all_data, focus_id) if focus_id else None
     if focus is not None:
@@ -388,7 +460,7 @@ def build_atlas_figure(
         yaxis["range"] = [focus.y - y_window, focus.y + y_window]
 
     figure.update_layout(
-        height=820,
+        height=680,
         margin={"l": 5, "r": 5, "t": 5, "b": 5},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(5,7,21,.90)",

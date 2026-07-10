@@ -1,12 +1,14 @@
-"""Reusable Streamlit interface components for BTS Song Atlas V2."""
+"""Reusable Streamlit interface components for BTS Song Atlas."""
 
 from __future__ import annotations
 
+import base64
 import html
 from pathlib import Path
 from urllib.parse import quote
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from utils import (
@@ -16,10 +18,71 @@ from utils import (
     semantic_story,
     similar_songs,
 )
-from visualization import build_atlas_figure, build_minimap
+from visualization import build_atlas_figure, build_home_preview, build_minimap
 
 
 ALL_SONGS = "__all_songs__"
+NAV_ITEMS = [
+    {
+        "slug": "home",
+        "label": "Home",
+        "subtitle": "Choose your experience",
+        "icon": "⌂",
+        "badge": None,
+    },
+    {
+        "slug": "atlas",
+        "label": "Atlas",
+        "subtitle": "2D semantic map",
+        "icon": "◎",
+        "badge": None,
+    },
+    {
+        "slug": "explorer",
+        "label": "Explorer",
+        "subtitle": "3D semantic universe",
+        "icon": "✦",
+        "badge": "Soon",
+    },
+    {
+        "slug": "compare",
+        "label": "Compare",
+        "subtitle": "Compare songs & themes",
+        "icon": "≍",
+        "badge": None,
+    },
+    {
+        "slug": "insights",
+        "label": "Insights",
+        "subtitle": "Statistics & visualizations",
+        "icon": "▥",
+        "badge": None,
+    },
+    {
+        "slug": "personal",
+        "label": "Personal Atlas",
+        "subtitle": "Your listening journey",
+        "icon": "◌",
+        "badge": "Soon",
+    },
+    {
+        "slug": "about",
+        "label": "About",
+        "subtitle": "About this project",
+        "icon": "ⓘ",
+        "badge": None,
+    },
+]
+CLUSTER_COLORS = {
+    -1: "#777b94",
+    0: "#4f6cff",
+    1: "#a855f7",
+    2: "#1dd98f",
+    3: "#ffd54f",
+    4: "#ff8c42",
+    5: "#ff4fa3",
+    6: "#1ad6ff",
+}
 FALLBACK_COVER = "data:image/svg+xml;charset=UTF-8," + quote(
     '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">'
     '<rect width="240" height="240" fill="#11132b"/>'
@@ -46,6 +109,32 @@ def _image_source(value: object) -> str:
 
 def _valid_url(value: object) -> bool:
     return bool(pd.notna(value) and str(value).startswith("https://"))
+
+
+def _logo_data_uri() -> str:
+    logo_path = Path(__file__).resolve().parents[1] / "docs" / "assets" / "BTS_logo.jpg"
+    if not logo_path.exists():
+        return FALLBACK_COVER
+    encoded = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _page_href(slug: str) -> str:
+    return f"?page={slug}"
+
+
+def _current_page() -> str:
+    raw = st.query_params.get("page", "home")
+    slug = raw[0] if isinstance(raw, list) else raw
+    known = {item["slug"] for item in NAV_ITEMS}
+    if slug == "journey":
+        return "atlas"
+    return slug if slug in known else "home"
+
+
+def _navigate(slug: str) -> None:
+    st.query_params["page"] = slug
+    st.rerun()
 
 
 def _select_song(track_id: str, *, focus: bool) -> None:
@@ -79,7 +168,7 @@ def _search_changed() -> None:
         return
     _select_song(track_id, focus=True)
     recent = [item for item in st.session_state.get("recent_searches", []) if item != track_id]
-    st.session_state.recent_searches = [track_id, *recent][:4]
+    st.session_state.recent_searches = [track_id, *recent][:5]
 
 
 def _popular_song(track_id: str) -> None:
@@ -106,176 +195,112 @@ def _journey_clear() -> None:
     st.session_state.journey_ids = [st.session_state.selected_song_id]
 
 
-def render_sidebar(data: pd.DataFrame) -> tuple[pd.DataFrame, str, dict[str, object]]:
-    min_year, max_year = int(data.release_year.min()), int(data.release_year.max())
+def _stats_summary(data: pd.DataFrame) -> dict[str, int]:
+    primary = data[data["is_primary_version"]]
+    return {
+        "songs": int(primary["canonical_title"].nunique()),
+        "clusters": int(primary.loc[primary["cluster"] != -1, "cluster"].nunique()),
+        "years": int(primary["release_year"].max() - primary["release_year"].min() + 1),
+        "universe": 1,
+    }
+
+
+def _song_options(data: pd.DataFrame) -> tuple[pd.DataFrame, list[str], dict[str, str]]:
     primary = data[data["is_primary_version"]].sort_values("track_name")
     song_options = primary["track_id"].tolist()
-    search_options = [ALL_SONGS, *song_options]
     labels = primary.set_index("track_id").apply(
-        lambda row: f"{row['track_name']} · {row['album_name']}", axis=1
+        lambda row: f"{row['track_name']} · {row['album_name']}",
+        axis=1,
     ).to_dict()
     labels[ALL_SONGS] = "All songs"
+    return primary, [ALL_SONGS, *song_options], labels
 
-    selected_id = st.session_state.selected_song_id
+
+def _selected_song_row(data: pd.DataFrame) -> pd.Series:
+    selected_rows = data[data["track_id"] == st.session_state.selected_song_id]
+    if selected_rows.empty:
+        return data.iloc[0]
+    return selected_rows.iloc[0]
+
+
+def _recent_song_rows(data: pd.DataFrame, limit: int = 5) -> pd.DataFrame:
+    ordered_ids: list[str] = []
+    for track_id in reversed(st.session_state.get("journey_ids", [])):
+        if track_id not in ordered_ids:
+            ordered_ids.append(track_id)
+    for track_id in st.session_state.get("recent_searches", []):
+        if track_id not in ordered_ids:
+            ordered_ids.append(track_id)
+    if st.session_state.get("selected_song_id") and st.session_state.selected_song_id not in ordered_ids:
+        ordered_ids.insert(0, st.session_state.selected_song_id)
+    rows = data.set_index("track_id").reindex(ordered_ids).dropna(subset=["track_name"]).reset_index()
+    return rows.head(limit)
+
+
+def _cluster_color(value: object) -> str:
+    try:
+        cluster = int(value)
+    except Exception:
+        return "#777b94"
+    return CLUSTER_COLORS.get(cluster, "#b26cff")
+
+
+def _init_state(data: pd.DataFrame) -> None:
+    if "selected_song_id" not in st.session_state:
+        black_swan = data[
+            data["track_name"].str.casefold().eq("black swan") & data["is_primary_version"]
+        ]
+        st.session_state.selected_song_id = (
+            black_swan.iloc[0].track_id if not black_swan.empty else data.iloc[0].track_id
+        )
+    st.session_state.setdefault("focus_song_id", None)
+    st.session_state.setdefault("viewport_revision", "atlas-v2")
+    st.session_state.setdefault("experience_mode", "Explore")
+    st.session_state.setdefault("atlas_overview", True)
+    st.session_state.setdefault("journey_ids", [])
+    st.session_state.setdefault("recent_searches", [])
+    st.session_state.setdefault("compare_song_id", None)
+    st.session_state.setdefault("song_search", ALL_SONGS)
+
+
+def render_app_sidebar(data: pd.DataFrame, current_page: str) -> None:
+    selected = _selected_song_row(data)
+    logo = _logo_data_uri()
+    nav_html = []
+    for item in NAV_ITEMS:
+        active = " active" if item["slug"] == current_page else ""
+        badge = f'<span class="nav-badge">{item["badge"]}</span>' if item["badge"] else ""
+        nav_html.append(
+            f'<a class="nav-link{active}" href="{_page_href(item["slug"])}" target="_self">'
+            f'<div class="nav-icon">{item["icon"]}</div>'
+            f'<div class="nav-copy"><div class="nav-label">{_safe(item["label"])}</div>'
+            f'<div class="nav-subtitle">{_safe(item["subtitle"])}</div></div>{badge}</a>'
+        )
+    sidebar_html = f"""
+    <div class="sidebar-shell">
+      <div class="sidebar-brand">
+        <img class="sidebar-logo" src="{logo}" alt="BTS Song Atlas logo">
+        <div>
+          <div class="sidebar-title">BTS SONG ATLAS</div>
+          <div class="sidebar-subtitle">Explore the Universe of BTS Lyrics</div>
+        </div>
+      </div>
+      <div class="sidebar-nav">{''.join(nav_html)}</div>
+      <div class="now-playing-card">
+        <div class="now-playing-kicker">Now playing</div>
+        <div class="now-playing-row">
+          <img class="now-playing-cover" src="{_safe(_image_source(selected.image_url))}" alt="">
+          <div>
+            <div class="now-playing-name">{_safe(selected.track_name)}</div>
+            <div class="now-playing-album">{_safe(selected.album_name)}</div>
+          </div>
+        </div>
+        <div class="now-playing-note">The atlas remembers your current song while you move through experiences.</div>
+      </div>
+    </div>
+    """
     with st.sidebar:
-        st.markdown(
-            """
-            <div class="brand-card">
-              <div class="brand-kicker">SEMANTIC EXPLORATION</div>
-              <div class="brand-title">BTS SONG ATLAS <span>♥</span></div>
-              <p>Move through a universe of songs shaped by lyrical meaning.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown('<div class="section-label">Search</div>', unsafe_allow_html=True)
-        if "song_search" not in st.session_state:
-            st.session_state.song_search = ALL_SONGS
-        st.selectbox(
-            "Search for a song",
-            search_options,
-            format_func=lambda track_id: labels[track_id],
-            key="song_search",
-            on_change=_search_changed,
-            filter_mode="fuzzy",
-            placeholder="Search for a song…",
-            label_visibility="collapsed",
-        )
-        st.caption("Type a title, album, or close spelling · ↑↓ to navigate · Enter to select")
-
-        recent_ids = [track_id for track_id in st.session_state.recent_searches if track_id in labels]
-        if recent_ids:
-            st.caption("Recent searches")
-            recent_columns = st.columns(2)
-            for index, track_id in enumerate(recent_ids):
-                recent_columns[index % 2].button(
-                    labels[track_id].split(" · ")[0],
-                    key=f"recent_{track_id}",
-                    width="stretch",
-                    on_click=_popular_song,
-                    args=(track_id,),
-                )
-
-        popular = ["Black Swan", "Spring Day", "Dynamite", "Life Goes On"]
-        columns = st.columns(2)
-        for index, title in enumerate(popular):
-            match = primary[primary["track_name"].str.casefold() == title.casefold()]
-            if not match.empty:
-                columns[index % 2].button(
-                    title,
-                    key=f"popular_{index}",
-                    width="stretch",
-                    on_click=_popular_song,
-                    args=(match.iloc[0].track_id,),
-                )
-
-        st.markdown('<div class="section-label">Explore mode</div>', unsafe_allow_html=True)
-        mode = st.segmented_control(
-            "Experience mode",
-            ["Explore", "Compare"],
-            key="experience_mode",
-            label_visibility="collapsed",
-            width="stretch",
-        )
-        neighborhood_size = st.select_slider(
-            "Top similar songs",
-            options=[5, 10, 20, 50],
-            value=10,
-            key="neighborhood_size",
-        )
-        if mode == "Compare":
-            compare_options = [track_id for track_id in song_options if track_id != selected_id]
-            st.selectbox(
-                "Compare with",
-                compare_options,
-                index=None,
-                format_func=lambda track_id: labels[track_id],
-                key="compare_search",
-                on_change=_compare_changed,
-                filter_mode="fuzzy",
-                placeholder="Choose a second song…",
-            )
-        else:
-            journey = st.session_state.journey_ids
-            st.caption(f"Journey · {len(journey)} stop{'s' if len(journey) != 1 else ''}")
-            back, clear = st.columns(2)
-            back.button("← Back", width="stretch", disabled=len(journey) < 2, on_click=_journey_back)
-            clear.button("Clear path", width="stretch", on_click=_journey_clear)
-
-        st.markdown('<div class="section-label">Color by</div>', unsafe_allow_html=True)
-        color_by = st.selectbox(
-            "Color points by",
-            ["Album", "Release Year", "Language", "Word Count", "Semantic Cluster"],
-            key="color_mode",
-            label_visibility="collapsed",
-        )
-
-        st.markdown('<div class="section-label">Filters</div>', unsafe_allow_html=True)
-        time_cutoff = st.slider(
-            "Universe through",
-            min_year,
-            max_year,
-            max_year,
-            key="time_cutoff",
-            help="Move backward through release history and watch the atlas emerge.",
-        )
-        album_filter = st.multiselect(
-            "Album",
-            sorted(data["album_name"].dropna().unique()),
-            placeholder="All albums",
-            key="album_filter",
-        )
-        type_filter = st.multiselect(
-            "Album type",
-            sorted(data["album_type"].dropna().unique()),
-            placeholder="All types",
-            key="type_filter",
-        )
-
-        st.markdown('<div class="section-label">Advanced</div>', unsafe_allow_html=True)
-        controls = {
-            "labels": st.toggle("Label semantic neighbors", value=True, key="label_neighbors"),
-            "fade": st.toggle("Fade distant songs", value=True, key="fade_distant"),
-            "density": st.toggle("Scale dots by word count", value=False, key="lyrics_density"),
-            "duplicates": st.toggle("Show duplicate releases", value=False, key="show_duplicates"),
-            "mode": mode,
-            "neighborhood_size": neighborhood_size,
-        }
-
-        filtered = data[data["release_year"].le(time_cutoff)]
-        if album_filter:
-            filtered = filtered[filtered["album_name"].isin(album_filter)]
-        if type_filter:
-            filtered = filtered[filtered["album_type"].isin(type_filter)]
-        # Search is an explicit navigation action, so the selected song stays
-        # visible even when it sits just outside the active filters.
-        selected_row = data[data["track_id"].eq(selected_id)]
-        if (
-            not st.session_state.atlas_overview
-            and not selected_row.empty
-            and selected_id not in set(filtered["track_id"])
-        ):
-            filtered = pd.concat([filtered, selected_row], ignore_index=True)
-        compare_id = st.session_state.get("compare_song_id") if mode == "Compare" else None
-        compare_row = data[data["track_id"].eq(compare_id)] if compare_id else data.iloc[0:0]
-        if not compare_row.empty and compare_id not in set(filtered["track_id"]):
-            filtered = pd.concat([filtered, compare_row], ignore_index=True)
-        if not controls["duplicates"]:
-            filtered = (
-                filtered.assign(_selected=filtered["track_id"].eq(selected_id))
-                .sort_values(["_selected", "is_primary_version"], ascending=False)
-                .drop_duplicates("canonical_title")
-                .drop(columns="_selected")
-            )
-
-        st.markdown("---")
-        st.caption(
-            f"{data.canonical_title.nunique()} canonical songs · "
-            f"{len(data)} releases · {min_year}–{max_year}"
-        )
-        st.markdown('<div class="source-line">● Spotify &nbsp; ● Genius &nbsp; ● Multilingual AI</div>', unsafe_allow_html=True)
-    return filtered, color_by, controls
+        st.markdown(sidebar_html, unsafe_allow_html=True)
 
 
 def render_song_panel(song: pd.Series, data: pd.DataFrame, neighborhood_size: int) -> None:
@@ -406,7 +431,7 @@ def render_compare_panel(first: pd.Series, second: pd.Series, data: pd.DataFrame
         f'<div class="key">Release years</div>'
         f'<div class="value">{first.release_year} · {second.release_year}</div>'
         f'<div class="key">Unique neighbors</div>'
-        f'<div class="value">{len(first_titles - shared)} blue · {len(second_titles - shared)} amber</div></div>',
+        f'<div class="value">{len(first_titles - shared)} violet · {len(second_titles - shared)} amber</div></div>',
         unsafe_allow_html=True,
     )
     if shared:
@@ -417,13 +442,13 @@ def render_compare_panel(first: pd.Series, second: pd.Series, data: pd.DataFrame
         )
 
 
-def render_overview_panel(data: pd.DataFrame) -> None:
-    st.markdown('<div class="section-label panel-section">Atlas overview</div>', unsafe_allow_html=True)
+def render_overview_panel(data: pd.DataFrame, title: str = "Atlas overview") -> None:
+    st.markdown(f'<div class="section-label panel-section">{_safe(title)}</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="overview-welcome"><div class="overview-orbit">✦</div>'
         '<h3>The complete semantic universe</h3>'
         '<p>No song is selected. Every point represents a canonical BTS song positioned by '
-        'lyrical similarity.</p><p><b>Select any point</b> or use fuzzy search to reveal its neighborhood.</p></div>',
+        'lyrical similarity.</p><p><b>Select any point</b> or use search to begin exploration.</p></div>',
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -435,154 +460,612 @@ def render_overview_panel(data: pd.DataFrame) -> None:
     )
 
 
-@st.fragment
-def render_explorer(
-    data: pd.DataFrame,
-    filtered: pd.DataFrame,
-    color_by: str,
-    controls: dict[str, object],
-) -> None:
-    """Rerender only the atlas explorer when a point is selected."""
-    map_column, detail_column = st.columns([4.8, 1.35], gap="small")
-    with map_column:
-        header, status = st.columns([4, 1])
-        header.markdown(
-            '<div class="atlas-heading">Explore the semantic universe</div>'
-            f'<div class="panel-subtitle">{controls["mode"]} mode · Select a song to travel through lyrical space.</div>',
-            unsafe_allow_html=True,
-        )
-        status.markdown(
-            f'<div class="map-status">{len(filtered)} songs visible<br>'
-            f'<span>{color_by} · UMAP 2D</span></div>',
-            unsafe_allow_html=True,
-        )
-        if filtered.empty:
-            st.warning("No songs match the current filters.")
-        else:
-            focus_id = st.session_state.get("focus_song_id")
-            active_selected_id = (
-                None if st.session_state.atlas_overview else st.session_state.selected_song_id
-            )
-            event = st.plotly_chart(
-                build_atlas_figure(
-                    filtered,
-                    data,
-                    active_selected_id,
-                    color_by,
-                    controls,
-                    focus_id=focus_id,
-                    viewport_revision=st.session_state.viewport_revision,
-                    neighborhood_size=int(controls["neighborhood_size"]),
-                    compare_id=(
-                        st.session_state.get("compare_song_id")
-                        if controls["mode"] == "Compare" and not st.session_state.atlas_overview
-                        else None
-                    ),
-                    journey_ids=(
-                        st.session_state.journey_ids if controls["mode"] == "Explore" else None
-                    ),
-                ),
-                width="stretch",
-                config={
-                    "displaylogo": False,
-                    "scrollZoom": True,
-                    "responsive": True,
-                    "doubleClick": "reset+autosize",
-                    "displayModeBar": "hover",
-                    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
-                },
-                on_select="rerun",
-                selection_mode="points",
-                key="atlas_plot_v2",
-            )
-            st.session_state.focus_song_id = None
-            if event and event.selection and event.selection.points:
-                custom = event.selection.points[0].get("customdata")
-                if custom and (
-                    st.session_state.atlas_overview
-                    or custom[0] != st.session_state.selected_song_id
-                ):
-                    if st.session_state.atlas_overview:
-                        _select_song(custom[0], focus=False)
-                    elif controls["mode"] == "Compare":
-                        st.session_state.compare_song_id = custom[0]
-                    else:
-                        _select_song(custom[0], focus=False)
-                    st.rerun(scope="fragment")
+def render_placeholder_page(title: str, subtitle: str, description: str) -> None:
+    st.markdown(
+        f"""
+        <div class="placeholder-shell">
+          <div class="hero-kicker">COMING SOON</div>
+          <h1 class="hero-title">{_safe(title)}</h1>
+          <p class="hero-subtitle">{_safe(subtitle)}</p>
+          <div class="placeholder-copy">{_safe(description)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    selected_rows = data[data["track_id"] == st.session_state.selected_song_id]
-    if selected_rows.empty:
-        selected_rows = data.iloc[[0]]
-    with detail_column:
-        selected_song = selected_rows.iloc[0]
-        compare_id = st.session_state.get("compare_song_id")
-        compare_rows = data[data["track_id"].eq(compare_id)] if compare_id else data.iloc[0:0]
-        if st.session_state.atlas_overview:
-            render_overview_panel(data)
-        elif controls["mode"] == "Compare" and not compare_rows.empty:
-            render_compare_panel(
-                selected_song,
-                compare_rows.iloc[0],
-                data,
-                int(controls["neighborhood_size"]),
+
+def render_about_page(data: pd.DataFrame) -> None:
+    stats = _stats_summary(data)
+    st.markdown(
+        """
+        <div class="hero-kicker">ABOUT THE PROJECT</div>
+        <h1 class="hero-title">BTS Song Atlas</h1>
+        <p class="hero-subtitle">An interactive semantic explorer built from multilingual BTS lyrics.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+    c1, c2, c3, c4 = st.columns(4, gap="small")
+    for column, (label, value) in zip(
+        (c1, c2, c3, c4),
+        [("Songs", stats["songs"]), ("Clusters", stats["clusters"]), ("Years", stats["years"]), ("Universe", stats["universe"])],
+        strict=True,
+    ):
+        column.markdown(
+            f'<div class="metric-card"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>',
+            unsafe_allow_html=True,
+        )
+    left, right = st.columns([1.2, 1], gap="large")
+    with left:
+        st.markdown(
+            """
+            <div class="content-card">
+              <div class="section-label">Why it exists</div>
+              <p class="body-copy">BTS Song Atlas is designed as a map-first product. Instead of organizing songs only by album or year, it lets listeners move through lyrical meaning as if they were navigating a universe.</p>
+              <p class="body-copy">Every point is a song. Nearby points share semantic similarity in the multilingual lyric embedding space. The 2D atlas remains the primary analytical surface.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.markdown(
+            """
+            <div class="content-card">
+              <div class="section-label">Technical core</div>
+              <ul class="about-list">
+                <li>Spotify metadata + Genius lyric matching</li>
+                <li>SentenceTransformers multilingual embeddings</li>
+                <li>Cosine similarity for neighborhoods and comparisons</li>
+                <li>Canonical-song UMAP projection for the atlas geometry</li>
+                <li>Streamlit + Plotly for interactive exploration</li>
+              </ul>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_insights_page(data: pd.DataFrame) -> None:
+    primary = data[data["is_primary_version"]].copy()
+    cluster_counts = (
+        primary.assign(cluster_label=primary["cluster"].map(lambda v: "Noise" if v == -1 else f"Cluster {int(v)}"))
+        .groupby("cluster_label")
+        .size()
+        .sort_values(ascending=False)
+    )
+    year_counts = primary.groupby("release_year").size()
+
+    st.markdown(
+        """
+        <div class="hero-kicker">INSIGHTS</div>
+        <h1 class="hero-title">Atlas Statistics</h1>
+        <p class="hero-subtitle">A compact analytical view of the semantic universe behind the atlas.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    stats = _stats_summary(data)
+    cols = st.columns(4, gap="small")
+    for column, (label, value) in zip(
+        cols,
+        [
+            ("Canonical songs", stats["songs"]),
+            ("Semantic clusters", stats["clusters"]),
+            ("Albums", int(primary["album_name"].nunique())),
+            ("Years covered", f"{primary['release_year'].min()}–{primary['release_year'].max()}"),
+        ],
+        strict=True,
+    ):
+        column.markdown(
+            f'<div class="metric-card"><div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    left, right = st.columns(2, gap="large")
+    with left:
+        cluster_fig = go.Figure(
+            go.Bar(
+                x=cluster_counts.index,
+                y=cluster_counts.values,
+                marker_color="#9d5cff",
+                opacity=0.9,
             )
-        else:
-            render_song_panel(selected_song, data, int(controls["neighborhood_size"]))
-            journey = st.session_state.journey_ids
-            if len(journey) > 1:
-                journey_rows = data.set_index("track_id").reindex(journey).dropna(subset=["track_name"])
-                st.markdown('<div class="section-label panel-section">Your journey</div>', unsafe_allow_html=True)
+        )
+        cluster_fig.update_layout(
+            title="Songs by cluster",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(12,14,31,.78)",
+            font={"color": "#ebe7f7"},
+            margin={"l": 10, "r": 10, "t": 45, "b": 10},
+            height=340,
+        )
+        st.plotly_chart(cluster_fig, width="stretch", config={"displayModeBar": False, "displaylogo": False})
+    with right:
+        year_fig = go.Figure(
+            go.Scatter(
+                x=year_counts.index,
+                y=year_counts.values,
+                mode="lines+markers",
+                line={"color": "#54c8ff", "width": 3},
+                marker={"size": 8, "color": "#9d5cff"},
+                fill="tozeroy",
+                fillcolor="rgba(84,200,255,.12)",
+            )
+        )
+        year_fig.update_layout(
+            title="Songs by release year",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(12,14,31,.78)",
+            font={"color": "#ebe7f7"},
+            margin={"l": 10, "r": 10, "t": 45, "b": 10},
+            height=340,
+        )
+        st.plotly_chart(year_fig, width="stretch", config={"displayModeBar": False, "displaylogo": False})
+
+
+def _render_recently_explored(data: pd.DataFrame) -> None:
+    recent = _recent_song_rows(data)
+    st.markdown('<div class="section-label">Recently explored</div>', unsafe_allow_html=True)
+    if recent.empty:
+        st.markdown(
+            """
+            <div class="empty-state-card">
+              <div class="empty-state-title">Your atlas is waiting</div>
+              <div class="empty-state-copy">Choose Atlas or Compare to start exploring the semantic universe and building a listening path.</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        return
+
+    columns = st.columns(len(recent), gap="small")
+    for column, row in zip(columns, recent.itertuples(), strict=True):
+        with column:
+            st.markdown(
+                f"""
+                <div class="recent-card">
+                  <div class="recent-head"><span class="recent-dot" style="background:{_cluster_color(row.cluster)}"></span>{_safe(row.track_name)}</div>
+                  <div class="recent-album">{_safe(row.album_name)}</div>
+                  <div class="recent-cluster">{_safe('Reflection' if row.cluster == 0 else f'Cluster {int(row.cluster)}' if row.cluster != -1 else 'Noise')}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def render_home_page(data: pd.DataFrame) -> None:
+    primary, _, _ = _song_options(data)
+    stats = _stats_summary(data)
+    _, about_col = st.columns([5, 1.2], gap="small")
+    with about_col:
+        st.button("About the Atlas", key="about_cta", width="stretch", on_click=_navigate, args=("about",))
+
+    hero, preview = st.columns([1.2, 1.25], gap="large")
+    with hero:
+        st.markdown(
+            """
+            <div class="hero-kicker">WELCOME TO</div>
+            <h1 class="hero-title">BTS Song <span>Atlas</span></h1>
+            <p class="hero-subtitle">Explore the semantic universe of BTS lyrics</p>
+            <p class="hero-description">Every point is a song. Every color is a theme. Every connection tells a story.</p>
+            """,
+            unsafe_allow_html=True,
+        )
+        metrics = st.columns(4, gap="small")
+        for column, (label, value, icon) in zip(
+            metrics,
+            [
+                ("Songs", stats["songs"], "♫"),
+                ("Clusters", stats["clusters"], "✺"),
+                ("Years", stats["years"], "◷"),
+                ("Universe", stats["universe"], "◌"),
+            ],
+            strict=True,
+        ):
+            column.markdown(
+                f'<div class="metric-card"><div class="metric-icon">{icon}</div>'
+                f'<div class="metric-value">{value}</div><div class="metric-label">{label}</div></div>',
+                unsafe_allow_html=True,
+            )
+    with preview:
+        st.plotly_chart(
+            build_home_preview(primary),
+            width="stretch",
+            config={"displayModeBar": False, "displaylogo": False, "responsive": True},
+            key="home_preview_plot",
+        )
+
+    st.markdown('<div class="section-label home-section">Choose your experience</div>', unsafe_allow_html=True)
+    cards = [
+        {
+            "title": "Atlas",
+            "subtitle": "2D Semantic Map",
+            "description": "Analyze the lyrical landscape in 2D. Discover themes, clusters, and relationships.",
+            "icon": "◎",
+            "action": "Open Atlas",
+            "slug": "atlas",
+            "soon": False,
+        },
+        {
+            "title": "Explorer",
+            "subtitle": "3D Semantic Universe",
+            "description": "Fly through the semantic universe in 3D. Rotate, zoom, and explore freely.",
+            "icon": "✦",
+            "action": "Coming soon",
+            "slug": "explorer",
+            "soon": True,
+        },
+        {
+            "title": "Compare",
+            "subtitle": "Compare Songs",
+            "description": "Compare songs, themes, and eras. See how they relate in semantic space.",
+            "icon": "≍",
+            "action": "Compare Now",
+            "slug": "compare",
+            "soon": False,
+        },
+        {
+            "title": "Insights",
+            "subtitle": "Statistics & Visuals",
+            "description": "Dive into insights about themes, eras, vocabulary, and atlas structure.",
+            "icon": "▥",
+            "action": "View Insights",
+            "slug": "insights",
+            "soon": False,
+        },
+        {
+            "title": "Personal Atlas",
+            "subtitle": "Your Listening Journey",
+            "description": "Map your Spotify listening history onto the atlas. Coming soon.",
+            "icon": "◌",
+            "action": "Coming soon",
+            "slug": "personal",
+            "soon": True,
+        },
+    ]
+    rows = [cards[:3], cards[3:]]
+    for row_cards in rows:
+        columns = st.columns(len(row_cards), gap="small")
+        for column, card in zip(columns, row_cards, strict=True):
+            with column:
+                badge = '<span class="card-badge">Soon</span>' if card["soon"] else ""
                 st.markdown(
-                    '<div class="journey-path">' + "<span>↓</span>".join(
-                        f'<b>{_safe(name)}</b>' for name in journey_rows.track_name
-                    ) + "</div>",
+                    f"""
+                    <div class="experience-card">
+                      <div class="experience-icon">{card['icon']}</div>
+                      <div class="experience-title">{_safe(card['title'])}{badge}</div>
+                      <div class="experience-subtitle">{_safe(card['subtitle'])}</div>
+                      <div class="experience-copy">{_safe(card['description'])}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                st.button(
+                    card["action"],
+                    key=f"card_{card['slug']}",
+                    width="stretch",
+                    on_click=_navigate if not card["soon"] else None,
+                    args=(card["slug"],) if not card["soon"] else (),
+                    disabled=card["soon"],
+                )
+
+    _render_recently_explored(data)
+
+
+def render_atlas_search_bar(data: pd.DataFrame) -> None:
+    _, search_options, labels = _song_options(data)
+    if "song_search" not in st.session_state:
+        st.session_state.song_search = ALL_SONGS
+    st.selectbox(
+        "Search for a song",
+        search_options,
+        format_func=lambda track_id: labels[track_id],
+        key="song_search",
+        on_change=_search_changed,
+        filter_mode="fuzzy",
+        placeholder="Search for a song, theme, or lyric…",
+        label_visibility="collapsed",
+    )
+
+
+def render_atlas_controls_panel(data: pd.DataFrame, forced_mode: str) -> tuple[pd.DataFrame, str, dict[str, object]]:
+    min_year, max_year = int(data.release_year.min()), int(data.release_year.max())
+    primary, _, labels = _song_options(data)
+    selected_id = st.session_state.selected_song_id
+
+    st.session_state.experience_mode = forced_mode
+
+    st.markdown('<div class="section-label">Search</div>', unsafe_allow_html=True)
+    render_atlas_search_bar(data)
+
+    st.markdown('<div class="section-label">Atlas controls</div>', unsafe_allow_html=True)
+    neighborhood_size = st.select_slider(
+        "Top similar songs",
+        options=[5, 10, 20, 50],
+        value=st.session_state.get("neighborhood_size", 10),
+        key="neighborhood_size",
+    )
+    if forced_mode == "Compare":
+        compare_options = [track_id for track_id in primary["track_id"].tolist() if track_id != selected_id]
+        st.selectbox(
+            "Compare with",
+            compare_options,
+            index=None,
+            format_func=lambda track_id: labels[track_id],
+            key="compare_search",
+            on_change=_compare_changed,
+            filter_mode="fuzzy",
+            placeholder="Choose a second song…",
+        )
+    else:
+        journey = st.session_state.journey_ids
+        st.caption(f"Journey · {len(journey)} stop{'s' if len(journey) != 1 else ''}")
+        back, clear = st.columns(2, gap="small")
+        back.button("← Back", width="stretch", disabled=len(journey) < 2, on_click=_journey_back)
+        clear.button("Clear path", width="stretch", on_click=_journey_clear)
+
+    st.markdown('<div class="section-label">Visual controls</div>', unsafe_allow_html=True)
+    color_by = st.selectbox(
+        "Color points by",
+        ["Album", "Release Year", "Language", "Word Count", "Semantic Cluster"],
+        key="color_mode",
+        label_visibility="collapsed",
+    )
+    time_cutoff = st.slider(
+        "Universe through",
+        min_year,
+        max_year,
+        st.session_state.get("time_cutoff", max_year),
+        key="time_cutoff",
+    )
+    album_filter = st.multiselect(
+        "Album",
+        sorted(data["album_name"].dropna().unique()),
+        placeholder="All albums",
+        key="album_filter",
+    )
+    type_filter = st.multiselect(
+        "Album type",
+        sorted(data["album_type"].dropna().unique()),
+        placeholder="All types",
+        key="type_filter",
+    )
+
+    controls = {
+        "labels": st.toggle("Label semantic neighbors", value=st.session_state.get("label_neighbors", True), key="label_neighbors"),
+        "fade": st.toggle("Fade distant songs", value=st.session_state.get("fade_distant", True), key="fade_distant"),
+        "density": st.toggle("Scale dots by word count", value=st.session_state.get("lyrics_density", False), key="lyrics_density"),
+        "duplicates": st.toggle("Show duplicate releases", value=st.session_state.get("show_duplicates", False), key="show_duplicates"),
+        "mode": forced_mode,
+        "neighborhood_size": neighborhood_size,
+    }
+
+    filtered = data[data["release_year"].le(time_cutoff)]
+    if album_filter:
+        filtered = filtered[filtered["album_name"].isin(album_filter)]
+    if type_filter:
+        filtered = filtered[filtered["album_type"].isin(type_filter)]
+    selected_row = data[data["track_id"].eq(selected_id)]
+    if (
+        not st.session_state.atlas_overview
+        and not selected_row.empty
+        and selected_id not in set(filtered["track_id"])
+    ):
+        filtered = pd.concat([filtered, selected_row], ignore_index=True)
+    compare_id = st.session_state.get("compare_song_id") if forced_mode == "Compare" else None
+    compare_row = data[data["track_id"].eq(compare_id)] if compare_id else data.iloc[0:0]
+    if not compare_row.empty and compare_id not in set(filtered["track_id"]):
+        filtered = pd.concat([filtered, compare_row], ignore_index=True)
+    if not controls["duplicates"]:
+        filtered = (
+            filtered.assign(_selected=filtered["track_id"].eq(selected_id))
+            .sort_values(["_selected", "is_primary_version"], ascending=False)
+            .drop_duplicates("canonical_title")
+            .drop(columns="_selected")
+        )
+
+    return filtered, color_by, controls
+
+
+@st.fragment
+def render_atlas_workspace(
+    data: pd.DataFrame,
+    *,
+    page_title: str,
+    subtitle: str,
+    forced_mode: str,
+) -> None:
+    show_sidecar = st.session_state.get("show_atlas_sidecar", True)
+
+    selected_song = _selected_song_row(data)
+    compare_id = st.session_state.get("compare_song_id")
+    compare_rows = data[data["track_id"].eq(compare_id)] if compare_id else data.iloc[0:0]
+
+    header, status = st.columns([4, 1], gap="small")
+    header.markdown(
+        f'<div class="hero-kicker">{_safe(forced_mode)} MODE</div>'
+        f'<div class="atlas-heading">{_safe(page_title)}</div>'
+        f'<div class="panel-subtitle">{_safe(subtitle)}</div>',
+        unsafe_allow_html=True,
+    )
+    status.markdown(
+        f'<div class="map-status">{data[data["is_primary_version"]]["canonical_title"].nunique()} songs in view<br>'
+        f'<span>{forced_mode} · UMAP 2D</span></div>',
+        unsafe_allow_html=True,
+    )
+    toggle_label = "Hide panel" if show_sidecar else "Show panel"
+    status.button(
+        toggle_label,
+        key=f"toggle_sidecar_{forced_mode.lower()}",
+        width="stretch",
+        on_click=lambda: st.session_state.update(show_atlas_sidecar=not st.session_state.get("show_atlas_sidecar", True)),
+    )
+
+    st.markdown(
+        """
+        <style>
+        section.main > div.block-container {
+          height: calc(100vh - 1.3rem);
+          overflow: hidden;
+          padding-bottom: 1rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container(key=f"atlas_workspace_{forced_mode.lower()}"):
+        if show_sidecar:
+            controls_col, plot_col, rail_column = st.columns([1.25, 4.95, 1.55], gap="small")
+        else:
+            controls_col, plot_col = st.columns([1.3, 5.9], gap="small")
+            rail_column = None
+
+        with controls_col:
+            with st.container(height=680, border=False, key=f"atlas_controls_{forced_mode.lower()}"):
+                filtered, color_by, controls = render_atlas_controls_panel(data, forced_mode)
+                st.markdown(
+                    f'<div class="rail-caption">{data.canonical_title.nunique()} canonical songs · '
+                    f'{len(data)} releases · {int(data.release_year.min())}–{int(data.release_year.max())}</div>',
                     unsafe_allow_html=True,
                 )
 
-        st.markdown('<div class="section-label panel-section">Atlas overview</div>', unsafe_allow_html=True)
-        mini_data = data[data["is_primary_version"]]
-        mini_event = st.plotly_chart(
-            build_minimap(
-                mini_data,
-                None if st.session_state.atlas_overview else selected_song.track_id,
-                st.session_state.journey_ids,
-            ),
-            width="stretch",
-            config={"displayModeBar": False, "displaylogo": False},
-            on_select="rerun",
-            selection_mode="points",
-            key="atlas_minimap",
-        )
-        st.caption("Select a point in the overview to move across the atlas.")
-        if mini_event and mini_event.selection and mini_event.selection.points:
-            custom = mini_event.selection.points[0].get("customdata")
-            if custom and custom[0] != st.session_state.selected_song_id:
-                _select_song(custom[0], focus=True)
-                st.rerun(scope="fragment")
+        with plot_col:
+            with st.container(key=f"atlas_plot_shell_{forced_mode.lower()}"):
+                if filtered.empty:
+                    st.warning("No songs match the current filters.")
+                else:
+                    focus_id = st.session_state.get("focus_song_id")
+                    active_selected_id = None if st.session_state.atlas_overview else st.session_state.selected_song_id
+                    event = st.plotly_chart(
+                        build_atlas_figure(
+                            filtered,
+                            data,
+                            active_selected_id,
+                            color_by,
+                            controls,
+                            focus_id=focus_id,
+                            viewport_revision=st.session_state.viewport_revision,
+                            neighborhood_size=int(controls["neighborhood_size"]),
+                            compare_id=(
+                                st.session_state.get("compare_song_id")
+                                if controls["mode"] == "Compare" and not st.session_state.atlas_overview
+                                else None
+                            ),
+                            journey_ids=(
+                                st.session_state.journey_ids if controls["mode"] == "Explore" else None
+                            ),
+                        ),
+                        width="stretch",
+                        config={
+                            "displaylogo": False,
+                            "scrollZoom": True,
+                            "responsive": True,
+                            "doubleClick": "reset+autosize",
+                            "displayModeBar": "hover",
+                            "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+                        },
+                        on_select="rerun",
+                        selection_mode="points",
+                        key=f"atlas_plot_{forced_mode.lower()}",
+                    )
+                    st.session_state.focus_song_id = None
+                    if event and event.selection and event.selection.points:
+                        custom = event.selection.points[0].get("customdata")
+                        if custom and (
+                            st.session_state.atlas_overview
+                            or custom[0] != st.session_state.selected_song_id
+                        ):
+                            if st.session_state.atlas_overview:
+                                _select_song(custom[0], focus=False)
+                            elif controls["mode"] == "Compare":
+                                st.session_state.compare_song_id = custom[0]
+                            else:
+                                _select_song(custom[0], focus=False)
+                            st.rerun(scope="fragment")
+
+        if show_sidecar and rail_column is not None:
+            with rail_column:
+                with st.container(height=680, border=False, key=f"atlas_sidecar_{forced_mode.lower()}"):
+                    st.markdown('<div class="section-label">Current view</div>', unsafe_allow_html=True)
+                    if st.session_state.atlas_overview:
+                        render_overview_panel(data, "Atlas overview")
+                    elif controls["mode"] == "Compare" and not compare_rows.empty:
+                        render_compare_panel(
+                            selected_song,
+                            compare_rows.iloc[0],
+                            data,
+                            int(controls["neighborhood_size"]),
+                        )
+                    else:
+                        render_song_panel(selected_song, data, int(controls["neighborhood_size"]))
+                        journey = st.session_state.journey_ids
+                        if len(journey) > 1 and controls["mode"] == "Explore":
+                            journey_rows = data.set_index("track_id").reindex(journey).dropna(subset=["track_name"])
+                            st.markdown('<div class="section-label panel-section">Your journey</div>', unsafe_allow_html=True)
+                            st.markdown(
+                                '<div class="journey-path">' + "<span>↓</span>".join(
+                                    f'<b>{_safe(name)}</b>' for name in journey_rows.track_name
+                                ) + "</div>",
+                                unsafe_allow_html=True,
+                            )
+                    st.markdown('<div class="section-label panel-section">Atlas overview</div>', unsafe_allow_html=True)
+                    mini_data = data[data["is_primary_version"]]
+                    mini_event = st.plotly_chart(
+                        build_minimap(
+                            mini_data,
+                            None if st.session_state.atlas_overview else selected_song.track_id,
+                            st.session_state.journey_ids,
+                        ),
+                        width="stretch",
+                        config={"displayModeBar": False, "displaylogo": False},
+                        on_select="rerun",
+                        selection_mode="points",
+                        key=f"atlas_minimap_{forced_mode.lower()}",
+                    )
+                    st.caption("Select a point in the overview to move across the atlas.")
+                    if mini_event and mini_event.selection and mini_event.selection.points:
+                        custom = mini_event.selection.points[0].get("customdata")
+                        if custom and custom[0] != st.session_state.selected_song_id:
+                            _select_song(custom[0], focus=True)
+                            st.rerun(scope="fragment")
 
 
 def render_dashboard() -> None:
     apply_styles()
     data = load_dashboard_data()
-    if "selected_song_id" not in st.session_state:
-        black_swan = data[
-            data["track_name"].str.casefold().eq("black swan") & data["is_primary_version"]
-        ]
-        st.session_state.selected_song_id = (
-            black_swan.iloc[0].track_id if not black_swan.empty else data.iloc[0].track_id
-        )
-    st.session_state.setdefault("focus_song_id", None)
-    st.session_state.setdefault("viewport_revision", "atlas-v2")
-    st.session_state.setdefault("experience_mode", "Explore")
-    st.session_state.setdefault("atlas_overview", True)
-    st.session_state.setdefault("journey_ids", [])
-    st.session_state.setdefault("recent_searches", [])
-    st.session_state.setdefault("compare_song_id", None)
+    _init_state(data)
+    current_page = _current_page()
+    render_app_sidebar(data, current_page)
 
-    filtered, color_by, controls = render_sidebar(data)
-    render_explorer(data, filtered, color_by, controls)
-    st.markdown(
-        '<div class="microcopy atlas-footer">Made with 💜 for ARMY &nbsp;·&nbsp; '
-        'Every point is a song; distance represents lyrical similarity.</div>',
-        unsafe_allow_html=True,
-    )
+    if current_page == "home":
+        render_home_page(data)
+    elif current_page == "atlas":
+        render_atlas_workspace(
+            data,
+            page_title="The Semantic Atlas",
+            subtitle="The default analytical map for exploring lyrical meaning and building journeys across the BTS universe.",
+            forced_mode="Explore",
+        )
+    elif current_page == "compare":
+        render_atlas_workspace(
+            data,
+            page_title="Compare Songs & Themes",
+            subtitle="Place two songs side by side and measure how their semantic neighborhoods overlap.",
+            forced_mode="Compare",
+        )
+    elif current_page == "insights":
+        render_insights_page(data)
+    elif current_page == "about":
+        render_about_page(data)
+    elif current_page == "explorer":
+        render_placeholder_page(
+            "3D Semantic Explorer",
+            "The 2D atlas remains the default analytical view.",
+            "This future mode will let users fly through the semantic universe while keeping the current 2D atlas as the primary map for reading patterns and relationships.",
+        )
+    elif current_page == "personal":
+        render_placeholder_page(
+            "Personal Atlas",
+            "Map your Spotify listening history onto the semantic atlas.",
+            "Coming soon. This future experience will connect your listening journey to the lyrical universe without changing the current atlas pipeline.",
+        )
